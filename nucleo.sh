@@ -225,7 +225,9 @@ while read -r host; do
     methods="$(ssh -v -o Batchmode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "NOT_PUMITA@${host}" 2>&1 | awk '/Authentications/ {print $6}' | sort -u )"
     if echo "${methods}" | grep -q password; then
         summary "${host}"
-        dbg "$(echo "${methods}" | tr ',' '\n')"
+        for method in $(echo "${methods}" | tr ',' '\n'); do
+            dbg "|_ ${method}"
+        done
     fi
 done < "${hosts}"
 
