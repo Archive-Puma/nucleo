@@ -26,11 +26,12 @@ BANNER
 #  |Colored outputs!|
 #  +---------------*/
 
-blu='\e[34m'
-ylw='\e[33m'
-grn='\e[32m'
-red='\e[31m'
-rst='\e[0m'
+blu='\033[34m'
+ylw='\033[33m'
+grn='\033[32m'
+red='\033[31m'
+bld='\033[1m'
+rst='\033[0m'
 
 #  __________________
 # /\                 \
@@ -46,7 +47,7 @@ dbg() {
     test "${verbose}" -gt 0 && echo "[${grn}DBG${rst}] ${1}"
 }
 inf() {
-    echo "[${blu}INF${rst}] ${1}"
+    echo "[${blu}MSG${rst}] ${1}"
 }
 wrn() {
     echo "[${ylw}WRN${rst}] ${1}"
@@ -68,7 +69,7 @@ issue() {
             1) risk="${grn}LOW" ;;
             *) risk="${blu}INF" ;;
         esac
-        echo "[${risk}${rst}][${category}][${title}] ${1}"
+        echo "[${bld}${risk}${rst}][${category}][${ylw}${title}${rst}] ${1}"
         reported='true'
     fi
 }
@@ -122,6 +123,7 @@ while :; do
             ylw=
             grn=
             blu=
+            bld=
             rst=
             ;;
 
@@ -209,20 +211,21 @@ trc "Timeout set to ${tmout} seconds"
 # |__|__|__|__|__|__|__|__|
 
 echo
+while read -r host; do
 
 # -------------------------
 #  22/TCP -- SSH
 # -------------------------
-category='ssh'
+    category='ssh'
+    ssh_algos="$(echo "SSH-2.0-Pumita" | timeout "${tmout}" nc -q 5 "${host}" 22 | tail -1 | strings -n 4 | uniq | grep -oE "[a-zA-Z0-9@.,-]+$")"
 
-ssh2_algos() { echo "SSH-2.0-Pumita" | timeout "${tmout}" nc -q 5 "${1}" 22 | tail -1 | strings -n 4 | uniq | grep -oE "[a-zA-Z0-9@.,-]+$"; }
+    test -n "${ssh_algos}" || continue
 
 # ---- Password-Based Authentication Supported
-severity=1
-title='password-based-authentication'
-
-while read -r host; do
     reported=
+    severity=1
+    title='password-based-authentication'
+
     methods="$(ssh -v -o Batchmode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "NOT_PUMITA@${host}" 2>&1 | awk '/Authentications/ {print $6}' | sort -u )"
     if echo "${methods}" | grep -q password; then
         issue "${host}"
@@ -230,59 +233,53 @@ while read -r host; do
             dbg "|_ ${method}"
         done
     fi
-done < "${hosts}"
 
 # ---- RC4 Encryption Algorithm Enabled
-severity=1
-title='rc4-algorithm'
-
-while read -r host; do
     reported=
-    for algo in $(ssh2_algos "${host}" | sed '3!d;s/,/\n/g' | grep 'arcfour'); do
+    severity=1
+    title='rc4-algorithm'
+
+    for algo in $(echo "${ssh_algos}" | sed '3!d;s/,/\n/g' | grep 'arcfour'); do
         issue "${host}"
         dbg "|_ ${algo}"
     done
-done < "${hosts}"
 
 # ---- Weak Encryption Algorithms Supported
-severity=1
-title='weak-encryption-algorithm'
-
-while read -r host; do
     reported=
-    for algo in $(ssh2_algos "${host}" | sed '3!d;s/,/\n/g' | grep -E '(arcfour|none|-cbc)'); do
+    severity=1
+    title='weak-encryption-algorithm'
+
+    for algo in $(echo "${ssh_algos}" | sed '3!d;s/,/\n/g' | grep -E '(arcfour|none|-cbc)'); do
         issue "${host}"
         dbg "|_ ${algo}"
     done
-done < "${hosts}"
-
 
 # ---- Weak Key Exchange Algorithms Supported
-severity=1
-title='weak-key-exchange-algorithm'
-
-while read -r host; do
+# https://www.virtuesecurity.com/kb/ssh-weak-key-exchange-algorithms-enabled/
     reported=
-    for algo in $(ssh2_algos "${host}" | sed '1!d;s/,/\n/g' | grep -E '(rsa1024|sha1(-.+)?$)'); do
+    severity=1
+    title='weak-key-exchange-algorithm'
+
+    for algo in $(echo "${ssh_algos}" | sed '1!d;s/,/\n/g' | grep -E '(rsa1024|sha1(-.+)?$)'); do
         issue "${host}"
         dbg "|_ ${algo}"
     done
-done < "${hosts}"
 
 # ---- Weak MAC Algorithms Supported
 # https://www.virtuesecurity.com/kb/ssh-weak-mac-algorithms-enabled/
-severity=0
-title='weak-mac-algorithm'
-
-while read -r host; do
     reported=
-    for algo in $(ssh2_algos "${host}" | sed '4!d;s/,/\n/g'); do
+    severity=0
+    title='weak-mac-algorithm'
+
+    for algo in $(echo "${ssh_algos}" | sed '4!d;s/,/\n/g'); do
         size="$(echo "${algo}" | grep -oE '\-[0-9]+' | tr -d '-')"
         if { test -n "${size}" && test "${size}" -lt 128; } || echo "${algo}" | grep -q 'md5'; then
             issue "${host}"
             dbg "|_ ${algo}"
         fi
     done
+
+
 done < "${hosts}"
 
 #          _ ._  _ , _ ._
