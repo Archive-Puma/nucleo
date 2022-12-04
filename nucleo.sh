@@ -62,13 +62,13 @@ halt() {
 # Issues
 issue() {
     if test -z "${reported}"; then
-        case "${1}" in
+        case "${severity}" in
             3) risk="${red}HGH" ;;
             2) risk="${ylw}MED" ;;
             1) risk="${grn}LOW" ;;
             *) risk="${blu}INF" ;;
         esac
-        echo "[${risk}${rst}][${category}][${2}] ${3}"
+        echo "[${risk}${rst}][${category}][${title}] ${1}"
         reported='true'
     fi
 }
@@ -88,7 +88,7 @@ issue() {
 
 # Arguments
 target=     # Target(s) to scan
-timeout=2   # Time to run each test
+tmout=2     # Time to run each test
 verbose=0   # Verbosity
 
 # Help function
@@ -140,7 +140,7 @@ while :; do
 
         -timeout|--timeout)
             if test -n "${2}"; then
-                timeout="${2}"
+                tmout="${2}"
                 shift
             else halt '--timeout requires a non-empty option argument'; fi
             ;;
@@ -198,8 +198,8 @@ fi
 inf "$(wc -l < "${hosts}") target(s) loaded."
 
 # Check the timeout
-test "${timeout}" -eq "${timeout}" 2>/dev/null || halt '--timeout requires a numeric argument'
-trc "Timeout set to ${timeout} seconds"
+test "${tmout}" -eq "${tmout}" 2>/dev/null || halt '--timeout requires a numeric argument'
+trc "Timeout set to ${tmout} seconds"
 
 #  /\ /\ /\ /\ /\ /\ /\ /\
 # |__|__|__|__|__|__|__|__|
@@ -215,16 +215,17 @@ echo
 # -------------------------
 category='ssh'
 
-ssh2_algos() { echo "SSH-2.0-Pumita" | nc -q 5 "${1}" 22 | tail -1 | strings -n 4 | uniq | grep -oE "[a-zA-Z0-9@.,-]+$"; }
+ssh2_algos() { echo "SSH-2.0-Pumita" | timeout "${tmout}" nc -q 5 "${1}" 22 | tail -1 | strings -n 4 | uniq | grep -oE "[a-zA-Z0-9@.,-]+$"; }
 
 # ---- Password-Based Authentication Supported
-summary() { issue 1 'password-based-authentication' "${1}"; }
+severity=1
+title='password-based-authentication'
 
 while read -r host; do
     reported=
     methods="$(ssh -v -o Batchmode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "NOT_PUMITA@${host}" 2>&1 | awk '/Authentications/ {print $6}' | sort -u )"
     if echo "${methods}" | grep -q password; then
-        summary "${host}"
+        issue "${host}"
         for method in $(echo "${methods}" | tr ',' '\n'); do
             dbg "|_ ${method}"
         done
@@ -232,38 +233,53 @@ while read -r host; do
 done < "${hosts}"
 
 # ---- RC4 Encryption Algorithm Enabled
-summary() { issue 1 'rc4-algorithm' "${1}"; }
+severity=1
+title='rc4-algorithm'
 
 while read -r host; do
     reported=
     for algo in $(ssh2_algos "${host}" | sed '3!d;s/,/\n/g' | grep 'arcfour'); do
-        summary "${host}"
+        issue "${host}"
         dbg "|_ ${algo}"
     done
 done < "${hosts}"
 
 # ---- Weak Encryption Algorithms Supported
-summary() { issue 1 'weak-encryption-algorithm' "${1}"; }
+severity=1
+title='weak-encryption-algorithm'
 
 while read -r host; do
     reported=
     for algo in $(ssh2_algos "${host}" | sed '3!d;s/,/\n/g' | grep -E '(arcfour|none|-cbc)'); do
-        summary "${host}"
+        issue "${host}"
         dbg "|_ ${algo}"
     done
 done < "${hosts}"
 
-# ---- Weak MAC Algorithms Enabled
+
+# ---- Weak Key Exchange Algorithms Supported
+severity=1
+title='weak-key-exchange-algorithm'
+
+while read -r host; do
+    reported=
+    for algo in $(ssh2_algos "${host}" | sed '1!d;s/,/\n/g' | grep -E '(rsa1024|sha1(-.+)?$)'); do
+        issue "${host}"
+        dbg "|_ ${algo}"
+    done
+done < "${hosts}"
+
+# ---- Weak MAC Algorithms Supported
 # https://www.virtuesecurity.com/kb/ssh-weak-mac-algorithms-enabled/
-summary() { issue 0 'weak-mac-algorithm' "${1}"; }
+severity=0
+title='weak-mac-algorithm'
 
 while read -r host; do
     reported=
     for algo in $(ssh2_algos "${host}" | sed '4!d;s/,/\n/g'); do
-        # Small digest length or tag size
         size="$(echo "${algo}" | grep -oE '\-[0-9]+' | tr -d '-')"
         if { test -n "${size}" && test "${size}" -lt 128; } || echo "${algo}" | grep -q 'md5'; then
-            summary "${host}"
+            issue "${host}"
             dbg "|_ ${algo}"
         fi
     done
