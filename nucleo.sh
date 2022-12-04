@@ -147,7 +147,7 @@ while :; do
             else halt '--timeout requires a non-empty option argument'; fi
             ;;
         -timeout=?*|--timeout=?*)
-            timeout="${1#*=}"
+            tmout="${1#*=}"
             ;;
         -timeout=|--timeout=)
             halt '--timeout requires a non-empty option argument'
@@ -226,7 +226,7 @@ while read -r host; do
     severity=1
     title='password-based-authentication'
 
-    methods="$(ssh -v -o Batchmode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "NOT_PUMITA@${host}" 2>&1 | awk '/Authentications/ {print $6}' | sort -u )"
+    methods="$(ssh -v -n -o Batchmode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "NOT_PUMITA@${host}" 2>&1 | awk '/Authentications/ {print $6}' | sort -u )"
     if echo "${methods}" | grep -q password; then
         issue "${host}"
         for method in $(echo "${methods}" | tr ',' '\n'); do
